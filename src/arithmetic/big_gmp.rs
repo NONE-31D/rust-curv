@@ -17,6 +17,7 @@
 use std::convert::{TryFrom, TryInto};
 use std::sync::atomic;
 use std::{fmt, ops, ptr};
+use std::mem::{uninitialized,size_of};
 
 use gmp::mpz::Mpz;
 use gmp::sign::Sign;
@@ -36,7 +37,7 @@ type BN = Mpz;
 /// Set of traits implemented on BigInt remains the same regardless of underlying implementation.
 #[derive(PartialOrd, PartialEq, Ord, Eq, Clone)]
 pub struct BigInt {
-    gmp: Mpz,
+    pub gmp: Mpz,
 }
 
 impl BigInt {
@@ -49,6 +50,17 @@ impl BigInt {
     fn into_inner(self) -> Mpz {
         self.gmp
     }
+    pub fn new() -> BigInt {
+        BigInt{gmp: Mpz::new()}
+    }
+    pub fn jacobi(a: &BigInt, b: &BigInt) -> i32 {
+        Mpz::jacobi(&a.gmp, &b.gmp)
+    }
+    pub fn ui_pow_ui(x: u32, y: u32) -> BigInt {
+        BigInt {gmp: Mpz::ui_pow_ui(x, y)}
+    }
+
+
 }
 
 #[allow(deprecated)]
@@ -149,7 +161,7 @@ impl Primes for BigInt {
 
 impl Modulo for BigInt {
     fn mod_pow(base: &Self, exponent: &Self, modulus: &Self) -> Self {
-        assert!(exponent >= &BigInt::zero(), "exponent must be non-negative");
+        // assert!(exponent >= &BigInt::zero(), "exponent must be non-negative");
         base.gmp.powm(&exponent.gmp, &modulus.gmp).wrap()
     }
 
