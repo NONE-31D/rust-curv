@@ -175,6 +175,8 @@ pub trait Samplable {
     fn strict_sample_range(lower: &Self, upper: &Self) -> Self;
     /// Generates number within `[0; 2^bit_size)` range
     fn sample(bit_size: usize) -> Self;
+
+    fn sample_with_seed(bit_size: usize, seed: &Self) -> Self;
     /// Generates number within `[2^(bit_size-1); 2^bit_size)` range
     fn strict_sample(bit_size: usize) -> Self;
 }

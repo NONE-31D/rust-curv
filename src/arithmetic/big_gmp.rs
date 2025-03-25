@@ -15,6 +15,7 @@
 */
 
 use std::convert::{TryFrom, TryInto};
+use std::hash::{self, Hash};
 use std::sync::atomic;
 use std::{fmt, ops, ptr};
 use std::mem::{uninitialized,size_of};
@@ -58,6 +59,15 @@ impl BigInt {
     }
     pub fn ui_pow_ui(x: u32, y: u32) -> BigInt {
         BigInt {gmp: Mpz::ui_pow_ui(x, y)}
+    }
+
+    pub fn powm(x: &BigInt, y: &BigInt, n: &BigInt) -> BigInt {
+        BigInt {gmp: Mpz::powm(&x.gmp, &y.gmp, &n.gmp)}
+    }
+
+
+    pub fn setbit(&mut self, bit_index: usize) {
+        self.gmp.setbit(bit_index);
     }
 
 
@@ -399,5 +409,10 @@ trait Wrap {
 impl Wrap for Mpz {
     fn wrap(self) -> BigInt {
         BigInt { gmp: self }
+    }
+}
+impl hash::Hash for BigInt {
+    fn hash<S: hash::Hasher>(&self, state: &mut S) {
+        self.gmp.hash(state);
     }
 }

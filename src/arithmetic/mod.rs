@@ -377,6 +377,22 @@ mod test {
         assert_big_int_implements_all_required_traits::<BigInt>();
     }
 
+    #[test] 
+    fn sample_with_seed_test() {
+        let a = BigInt::sample_with_seed(10, &BigInt::from(2));
+        println!("{:?}", a);
+
+        let a = BigInt::sample_with_seed(10, &BigInt::from(1));
+        println!("{:?}", a);
+
+        let a = BigInt::sample_with_seed(10, &BigInt::from(2));
+        println!("{:?}", a);
+
+        let a = BigInt::sample_with_seed(10, &BigInt::from(1));
+        println!("{:?}", a);
+    }
+
+
     /// A no-op function that takes BigInt implementation as a generic param. It's only purpose
     /// is to abort compilation if BigInt doesn't implement certain traits.
     #[allow(deprecated)]

@@ -1,4 +1,4 @@
-use rand::{rngs::OsRng, RngCore};
+use rand::{rngs::{OsRng, StdRng}, RngCore, SeedableRng};
 
 use super::traits::{BitManipulation, Converter, Samplable, Zero};
 use super::BigInt;
@@ -29,6 +29,20 @@ impl Samplable for BigInt {
                 return n;
             }
         }
+    }
+
+    fn sample_with_seed(bit_size: usize, seed: &Self) -> Self {
+        if bit_size == 0 {
+            return BigInt::zero();
+        }
+
+        let mut rng = StdRng::from_seed(seed.to_bytes_array().unwrap());
+
+        // let mut rng = OsRng;
+        let bytes = (bit_size - 1) / 8 + 1;
+        let mut buf: Vec<u8> = vec![0; bytes];
+        rng.fill_bytes(&mut buf);
+        BigInt::from_bytes(&buf) >> (bytes * 8 - bit_size)
     }
 
     fn sample(bit_size: usize) -> Self {
