@@ -15,13 +15,15 @@ pub mod sigma_dlog;
 pub mod sigma_ec_ddh;
 pub mod sigma_valid_pedersen;
 pub mod sigma_valid_pedersen_blind;
+pub mod quadratic_residue_dlog;
+pub mod quadratic_residue;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProofError;
 
 impl fmt::Display for ProofError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ProofError")
+        write!(f, "aaaaaProofError")
     }
 }
 
