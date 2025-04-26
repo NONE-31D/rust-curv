@@ -153,13 +153,72 @@ impl RangeProof {
 mod tests {
     use super::*;
 
+    pub struct Keypair {
+        #[serde(with = "crate::serialize::bigint")]
+        pub p: BigInt, // TODO[Morten] okay to make non-public?
+    
+        #[serde(with = "crate::serialize::bigint")]
+        pub q: BigInt, // TODO[Morten] okay to make non-public?
+    }
+
+    impl Keypair {
+        /// Generate default encryption and decryption keys.
+        pub fn keys(&self) -> (EncryptionKey, DecryptionKey) {
+            let p = self.p.clone();
+            let q = self.q.clone();
+            (EncryptionKey{n: p.clone()*q.clone()}, DecryptionKey{p, q})
+        }
+    }
+
+    /// Public encryption key.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct EncryptionKey {
+        pub n: BigInt,  // the modulus
+    }
+
+    /// Private decryption key.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct DecryptionKey {
+        pub p: BigInt, // first prime
+        pub q: BigInt, // second prime
+    }
+    
+
+    fn keypair_blum_with_modulus_size(bit_length: usize) -> Keypair {
+        let mut p = BigInt::new();
+        let mut q = BigInt::new();
+        loop {
+            p = BigInt::sample_prime(bit_length / 2);
+            if &p % 4 != BigInt::from(3) {
+                continue;
+            }
+
+            q = BigInt::sample_prime(bit_length / 2);
+            if &q % 4 != BigInt::from(3) {
+                continue;
+            }
+            if BigInt::gcd(&p, &q) != BigInt::one() {
+                continue;
+            } // check that p and q are coprime (ensures q^-1 mod p exists)
+
+            let n = &p * &q;
+            let phi_n = (&p - BigInt::one()) * (&q - BigInt::one());
+            if BigInt::gcd(&n, &phi_n) != BigInt::one() {
+                continue; // N과 φ(N)이 서로소가 아니라면 다시 샘플링
+            }
+
+            break;
+        } // mod 4에서 3이되는 prime(p, q) 선정 -> n = pq
+        Keypair { p, q }
+    }
+
     #[test]
     pub fn test_range_proof() {
         // let n = BigInt::sample(3072);
         // let nn = n.clone() * n.clone();
         // let q = BigInt::sample(256); // temporary q as 256-bit
 
-        let (ek, dk) = Paillier::keypair_with_modulus_size(3072);
+        let (ek, dk) = keypair_blum_with_modulus_size(3072).keys();
         let n = ek.n.clone();
         let nn = n.clone() * n.clone();
         let q = dk.q.clone();
@@ -172,6 +231,7 @@ mod tests {
             &nn
         );
 
+        // 여기 ek위치에 capital C 넣어야하는거 아니에여?? 
         let range_proof = RangeProof::prove(&ek, &nn, &q, &c, &x, &r);
 
         match RangeProof::verify(&range_proof, &n, &nn, &q, &c, ) {
