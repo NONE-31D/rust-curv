@@ -17,13 +17,15 @@ pub mod sigma_valid_pedersen;
 pub mod sigma_valid_pedersen_blind;
 pub mod quadratic_residue_dlog;
 pub mod quadratic_residue;
+pub mod range_proof;
+pub mod affine_operation;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProofError;
 
 impl fmt::Display for ProofError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "aaaaaProofError")
+        write!(f, "ProofError")
     }
 }
 

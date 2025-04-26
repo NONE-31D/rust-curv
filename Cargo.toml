@@ -8,7 +8,7 @@ authors = [
 ]
 license = "MIT"
 description = "Curv contains an extremely simple interface to onboard new elliptic curves. Use this library for general purpose elliptic curve cryptography"
-repository = "https://github.com/ZenGo-X/curv"
+repository = "https://github.com/KZen-networks/multi-party-ecdsa"
 
 [lib]
 name = "curv"
