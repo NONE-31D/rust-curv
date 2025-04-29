@@ -1,4 +1,5 @@
 use sha2::{Sha256, Digest};
+use tests::{DecryptionKey, EncryptionKey};
 use crate::{arithmetic::traits::*, cryptographic_primitives::proofs::{quadratic_residue::*, quadratic_residue_dlog::*}};
 use crate::BigInt;
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ pub const L: u32 = 80;
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(bound = "")]
 pub struct AffineProof {
+    pub ca: BigInt,
     capital_a: BigInt,
     capital_b1: BigInt,
     capital_b2: BigInt,
@@ -25,25 +27,42 @@ pub struct AffineProof {
 }
 
 impl AffineProof {    
+    pub fn verifier_setup(n0: &BigInt) -> (BigInt, BigInt, BigInt, QRProof, QRdlProof) {
+        let x: BigInt = BigInt::sample_below(&n0);
+        let h = BigInt::mod_pow(&x, &BigInt::from(2), &n0);
+        let alpha: BigInt = BigInt::sample_below(&n0);
+        let g = BigInt::mod_pow(&h, &alpha, &n0);
+
+        // h, g -> proof needed
+        let qr_proof = QRProof::prove(&h); // for h
+        let qrdl_proof = QRdlProof::prove(&g); // for g
+
+        (n0.clone(), h, g, qr_proof, qrdl_proof)
+    }
     pub fn prove(
-        pk: &BigInt,
+        n: &BigInt,
+        n0: &BigInt,
+        h: &BigInt,
+        g: &BigInt,
         nn: &BigInt,
         q: &BigInt,
-        ca: &BigInt,
         c: &BigInt,
-        a: &BigInt,
+        qr_proof: QRProof,
+        qrdl_proof: QRdlProof,
 
     ) -> AffineProof {
-        let n = pk;
+        // let n = pk;
 
-        let witness: BigInt = BigInt::sample_below(&n);
-        let h = BigInt::mod_pow(&witness, &BigInt::from(2), &n);
+        // let witness: BigInt = BigInt::sample_below(&n0);
+        // let h = BigInt::mod_pow(&witness, &BigInt::from(2), &n0);
+        let a = BigInt::sample_below(&q); // n
         let alpha = BigInt::sample_below(&n);
-        let g = BigInt::mod_pow(&h, &alpha, &n);
-    
-        // h, g -> proof needed
-        let qr_proof = QRProof::prove(&pk); // for h
-        let qrdl_proof = QRdlProof::prove(&pk); // for g
+        // let g = BigInt::mod_pow(&h, &alpha, &n0);
+        let ca: BigInt = BigInt::mod_mul(
+            &(BigInt::mod_pow(&c, &a, &nn)),
+            &(BigInt::one() + n.clone() * alpha.clone()),
+            &nn
+        );
     
         let verif_qr = QRProof::verify(&qr_proof, &n);
         let verif_qrdl = QRdlProof::verify(&qrdl_proof, &n);
@@ -52,35 +71,35 @@ impl AffineProof {
         let k_big = BigInt::from(2).pow(T+L+S) * q.pow(2);
         let b = BigInt::sample_below(&(BigInt::from(2).pow(T+L) * q));
         let beta = BigInt::sample_below(&(BigInt::from(2).pow(T+L) * k_big));
-        let rho1 = BigInt::sample_below(&(BigInt::from(2).pow(T+L) * n));
-        let rho2 = BigInt::sample_below(&(BigInt::from(2).pow(T+L) * n));
-        let rho3 = BigInt::sample_below(&(n));
-        let rho4 = BigInt::sample_below(&(n));
+        let rho1 = BigInt::sample_below(&(BigInt::from(2).pow(T+L) * n0));
+        let rho2 = BigInt::sample_below(&(BigInt::from(2).pow(T+L) * n0));
+        let rho3 = BigInt::sample_below(n0);
+        let rho4 = BigInt::sample_below(n0);
 
         let capital_a = BigInt::mod_mul( // A = c^b * (1 + n*beta) mod nn
             &(BigInt::mod_pow(&c, &b, &nn)),
-            &(BigInt::one() + n.clone() * beta.clone()),
+            &((BigInt::one() + n * beta.clone()) % nn),
             &nn
         );
-        let capital_b1 = BigInt::mod_mul( // B1 = g^b * h^rho1 mod n
-            &(BigInt::mod_pow(&g, &b, &n)),
-            &(BigInt::mod_pow(&h, &rho1, &n)),
-            &n
+        let capital_b1 = BigInt::mod_mul( // B1 = g^b * h^rho1 mod n0
+            &(BigInt::mod_pow(&g, &b, &n0)),
+            &(BigInt::mod_pow(&h, &rho1, &n0)),
+            &n0
         );
-        let capital_b2 = BigInt::mod_mul( // B2 = g^beta * h^rho2 mod n
-            &(BigInt::mod_pow(&g, &beta, &n)),
-            &(BigInt::mod_pow(&h, &rho2, &n)),
-            &n
+        let capital_b2 = BigInt::mod_mul( // B2 = g^beta * h^rho2 mod n0
+            &(BigInt::mod_pow(&g, &beta, &n0)),
+            &(BigInt::mod_pow(&h, &rho2, &n0)),
+            &n0
         );
-        let capital_b3 = BigInt::mod_mul( // B3 = g^a * h^rho3 mod n
-            &(BigInt::mod_pow(&g, &a, &n)),
-            &(BigInt::mod_pow(&h, &rho3, &n)),
-            &n
+        let capital_b3 = BigInt::mod_mul( // B3 = g^a * h^rho3 mod n0
+            &(BigInt::mod_pow(&g, &a, &n0)),
+            &(BigInt::mod_pow(&h, &rho3, &n0)),
+            &n0
         );
-        let capital_b4 = BigInt::mod_mul( // B4 = g^alpha * h^rho4 mod n
-            &(BigInt::mod_pow(&g, &alpha, &n)),
-            &(BigInt::mod_pow(&h, &rho4, &n)),
-            &n
+        let capital_b4 = BigInt::mod_mul( // B4 = g^alpha * h^rho4 mod n0
+            &(BigInt::mod_pow(&g, &alpha, &n0)),
+            &(BigInt::mod_pow(&h, &rho4, &n0)),
+            &n0
         );
 
         // hashing e as non-interactive / e in 2^T
@@ -97,28 +116,28 @@ impl AffineProof {
         let result = hasher.finalize();
         let modulus = BigInt::from(2).pow(T);
         let e = BigInt::from_bytes(&result) % modulus;
-
+        
         // prover's 2nd message
         let z1 = b.clone() + e.clone() * a.clone();
         let z2 = beta.clone() + e.clone() * alpha.clone();
         let z3 = rho1.clone() + e.clone() * rho3.clone();
         let z4 = rho2.clone() + e.clone() * rho4.clone();
 
-        AffineProof {capital_a, capital_b1, capital_b2, capital_b3, capital_b4, z1, z2, z3, z4, h, g}
+        AffineProof {ca, capital_a, capital_b1, capital_b2, capital_b3, capital_b4, z1, z2, z3, z4, h: h.clone(), g: g.clone()}
     }
 
     pub fn verify(
         affine_proof: &AffineProof, 
         n: &BigInt,
+        n0: &BigInt,
         nn: &BigInt,
         q: &BigInt,
-        ca: &BigInt,
         c: &BigInt,
 
     ) -> Result<(), ProofError> {
         // getting proof for affran from prover
         let big_k: BigInt = BigInt::from(2).pow(T+L+S) * q.pow(2);
-        let &AffineProof { ref capital_a, ref capital_b1, ref capital_b2, ref capital_b3, ref capital_b4, ref z1, ref z2, ref z3, ref z4, ref h, ref g } = affine_proof;
+        let &AffineProof {ref ca, ref capital_a, ref capital_b1, ref capital_b2, ref capital_b3, ref capital_b4, ref z1, ref z2, ref z3, ref z4, ref h, ref g } = affine_proof;
         
         // hashing e as non-interactive    
         let mut hasher = Sha256::new();
@@ -135,6 +154,7 @@ impl AffineProof {
         let modulus: BigInt = BigInt::from(2).pow(T);
         let e = BigInt::from_bytes(&result) % modulus;
 
+
         let verif1 = // range check for z1
         z1 >= &(BigInt::from(2).pow(T) * q) && 
         z1 < &(BigInt::from(2).pow(T+L) * q);
@@ -145,37 +165,39 @@ impl AffineProof {
 
         let lhs3 = BigInt::mod_mul(
             &(BigInt::mod_pow(&c, &z1, &nn)),
-            &(BigInt::one() + n.clone() * z2.clone()), 
+            &(BigInt::one() + n * z2.clone()), 
             &nn
         );
         let rhs3 = BigInt::mod_mul(
             &capital_a,
-            &(BigInt::mod_pow(&ca, &e, &nn)), 
-            &nn
+            &(BigInt::mod_pow(&ca, &e, &nn)),
+            &nn,
         );
 
         let lhs4 = BigInt::mod_mul(
-            &(BigInt::mod_pow(&g, &z1, &n)),
-            &(BigInt::mod_pow(&h, &z3, &n)),
-            &n
+            &(BigInt::mod_pow(&g, &z1, &n0)),
+            &(BigInt::mod_pow(&h, &z3, &n0)),
+            &n0
         );
         let rhs4 = BigInt::mod_mul(
             &capital_b1,
-            &(BigInt::mod_pow(&capital_b3, &e, &n)),
-            &n
+            &(BigInt::mod_pow(&capital_b3, &e, &n0)),
+            &n0
         );
 
         let lhs5 = BigInt::mod_mul(
-            &(BigInt::mod_pow(&g, &z2, &n)),
-            &(BigInt::mod_pow(&h, &z4, &n)),
-            &n
+            &(BigInt::mod_pow(&g, &z2, &n0)),
+            &(BigInt::mod_pow(&h, &z4, &n0)),
+            &n0
         );
         let rhs5 = BigInt::mod_mul(
             &capital_b2,
-            &(BigInt::mod_pow(&capital_b4, &e, &n)),
-            &n
+            &(BigInt::mod_pow(&capital_b4, &e, &n0)),
+            &n0
         );
 
+        println!("lhs3: {:?}", lhs3);
+        println!("rhs3: {:?}", rhs3);
         println!("lhs3 == rhs3: {}", lhs3 == rhs3);
         // println!("lhs3 = {}", lhs3);
         // println!("rhs3 = {}", rhs3);5 == rhs5);
@@ -567,7 +589,9 @@ static SMALL_PRIMES: [u32; 2048] = [
     #[test]
     pub fn test_affine_proof() {
         let (ek, dk) = keypair_blum_with_modulus_size(3072).keys();
+        let (ek0, dk0) = keypair_blum_with_modulus_size(3072).keys();
         let n = ek.n.clone();
+        let n0 = ek0.n.clone();
         let nn = n.clone() * n.clone();
         let q = dk.q.clone();
 
@@ -580,18 +604,12 @@ static SMALL_PRIMES: [u32; 2048] = [
         );
 
         // generating public ca with a, alpha
-        let a = BigInt::sample_below(&q); // n
         let big_k = BigInt::from(2).pow(T+L+S) * q.pow(2);
-        let alpha = BigInt::sample_below(&big_k);
-        let ca = BigInt::mod_mul(
-            &(BigInt::mod_pow(&c, &a, &nn)),
-            &(BigInt::one() + n.clone() * alpha.clone()),
-            &nn
-        );
 
-        let affine_proof = AffineProof::prove(&n, &nn, &q, &ca, &c, &a);
+        let (n0, h, g, qr_proof, qrdl_proof) = AffineProof::verifier_setup(&n0);
+        let affine_proof = AffineProof::prove(&n, &n0, &h, &g, &nn, &q,  &c, qr_proof, qrdl_proof);
 
-        match AffineProof::verify(&affine_proof, &n, &nn, &q, &ca, &c) {
+        match AffineProof::verify(&affine_proof, &n, &n0, &nn, &q, &c) {
             Ok(res) => println!("Verification_range_proof result: {:?}", res),
             Err(error ) => panic!("Problem opening the file: {:?}", error.to_string()),
         }; 
