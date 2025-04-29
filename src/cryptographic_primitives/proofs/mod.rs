@@ -19,6 +19,7 @@ pub mod quadratic_residue_dlog;
 pub mod quadratic_residue;
 pub mod range_proof;
 pub mod affine_operation;
+pub mod paillier_blum_modulus;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProofError;
