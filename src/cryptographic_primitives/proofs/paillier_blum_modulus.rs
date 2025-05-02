@@ -15,6 +15,16 @@ pub struct PaillierBlum {
     q: BigInt,
 }
 
+pub struct PaullierBlumEncryptionKey {
+    pub n: BigInt,
+    pub nn: BigInt,
+}
+pub struct PaullierBlumDecryptionKey {
+    pub p: BigInt,
+    pub q: BigInt,
+}
+
+
 impl PaillierBlum {
     pub fn get_p(&self) -> &BigInt {
         &self.p
@@ -24,7 +34,7 @@ impl PaillierBlum {
         &self.q
     }
 }
-
+#[derive(Clone)]
 pub struct PBProof { // paillier-blum-proof
     pub w: BigInt,
     pub x_vec: Vec<BigInt>,
@@ -34,11 +44,8 @@ pub struct PBProof { // paillier-blum-proof
 }
 
 impl PBProof {    
-    // pub fn prove(bit_len: usize) -> PBProof {
     pub fn prove(bit_len: usize) -> (PBProof, PaillierBlum) {
-
         // n, p, q
-        // let (n, p, q) = loop {
         let pb = loop {
             let p = BigInt::sample_prime(bit_len / 2);
             if &p % 4 != BigInt::from(3) {
@@ -59,8 +66,10 @@ impl PBProof {
             if BigInt::gcd(&n, &phi_n) != BigInt::one() {
                 continue;
             }
-            // break (n, p, q);
             break PaillierBlum { n, p, q };
+            // TODO: PB Ek , Dk 분리해서 저장
+            // p, q 생성
+            // ek, dk 분리 저장.
         };
     
         let n = pb.n.clone();
@@ -171,16 +180,15 @@ impl PBProof {
 
     pub fn verify(pb_proof: &PBProof, n: &BigInt,) -> Result<(), ProofError> {
         let &PBProof {ref w, ref x_vec, ref a_vec, ref b_vec, ref z_vec} = pb_proof;
+        // n이 짝수이거나, 소수일 가능성이 있으면 return Err
         if n.is_even() || n.is_probable_prime(10) {
             return Err(ProofError);
         }
-               
+        // y_vec
         let mut y_vec: Vec<BigInt> = Vec::with_capacity(L);
-
         let mut seed = Sha256::new();
         seed.update(n.to_bytes());
         seed.update(w.to_bytes());
-
         let mut y_i = BigInt::from_bytes(&seed.finalize()).modulus(&n);
         y_vec.push(y_i.clone());
 
@@ -197,23 +205,18 @@ impl PBProof {
             let b_i = b_vec[i];
             let z_i = &z_vec[i];
     
-            let z = BigInt::mod_pow(z_i, n, n);
+            let z = BigInt::mod_pow(z_i, &n, &n);
             
             let mut yi_prime = y_i.clone();
             if b_i == 1 {
-                yi_prime = BigInt::mod_mul(&yi_prime, &w, n);
+                yi_prime = BigInt::mod_mul(&yi_prime, &w, &n);
             }
             if a_i == 1 {
-                yi_prime = n - (&yi_prime % n);
+                yi_prime = n.clone() - (&yi_prime % n);
             }
     
-            let x4 = BigInt::mod_pow(x_i, &BigInt::from(4), n);
+            let x4 = BigInt::mod_pow(x_i, &BigInt::from(4), &n);
             if !(z == *y_i && x4 == yi_prime) {
-                println!("❌ Failed at index {}:", i);
-                println!("   z      = {}", z);
-                println!("   y_i    = {}", y_i);
-                println!("   x^4    = {}", x4);
-                println!("   yi'    = {}", yi_prime);
                 return Err(ProofError);
             }
             
@@ -544,18 +547,10 @@ mod tests {
 
     #[test]
     pub fn test_pb_proof() {
-        // let n = BigInt::sample(3072);
+        let pb_proof = PBProof::prove(3072); // n 생성해서 각종함수에 넘겨줌.
 
-        let pb_proof = PBProof::prove(3072);
-        // let (n, _p, _q) = {
-        //     let p = BigInt::sample_prime(3072 / 2);
-        //     let q = BigInt::sample_prime(3072 / 2);
-        //     let n = &p * &q;
-        //     (n, p, q)
-        // };
-        
         match PBProof::verify(&pb_proof.0, &pb_proof.1.n) {
-            Ok(res) => println!("Verification_qr result: {:?}", res),
+            Ok(res) => println!("Verification_pb result: {:?}", res),
             Err(error ) => panic!("Problem opening the file: {:?}", error.to_string()),
         }; 
     }

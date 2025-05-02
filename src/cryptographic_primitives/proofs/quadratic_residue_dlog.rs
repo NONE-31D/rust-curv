@@ -16,8 +16,8 @@ pub struct QRdlProof {
 }
 
 impl QRdlProof {    
-    pub fn prove(pk: &BigInt) -> QRdlProof {
-        let n = pk;
+    pub fn prove(n: &BigInt) -> QRdlProof {
+        // let n = pk;
 
         let witness: BigInt = BigInt::sample_below(&n);
         let h = BigInt::mod_pow(&witness, &BigInt::from(2), &n);

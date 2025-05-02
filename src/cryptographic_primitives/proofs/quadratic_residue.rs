@@ -13,17 +13,17 @@ pub struct QRProof {
 }
 
 impl QRProof {    
-    pub fn prove(pk: &BigInt) -> QRProof {
-        let n = pk;
-        let witness: BigInt = BigInt::sample_below(&n);
+    pub fn prove(n: &BigInt) -> QRProof {
+        // let n = pk;
+        let witness: BigInt = BigInt::sample_below(&n); // witness x
         let h = BigInt::mod_pow(&witness, &BigInt::from(2), &n);
-    
+        
         let r: BigInt = BigInt::sample_below(&n);
-        let a: BigInt = BigInt::mod_pow(&r, &BigInt::from(2), n);
-
+        let a: BigInt = BigInt::mod_pow(&r, &BigInt::from(2), &n);
+        
         let mut hasher = Sha256::default();
-        hasher.update(&a.to_string().as_bytes());
-        hasher.update(&h.to_string().as_bytes()); 
+        hasher.update(a.to_string().as_bytes());
+        hasher.update(h.to_string().as_bytes()); 
         let result = hasher.finalize();
         let last_byte = result[result.len() - 1];
         let e = if last_byte & 1 == 1{
@@ -31,9 +31,9 @@ impl QRProof {
         } else {
             BigInt::from(0)
         };
-
+        
         let z = BigInt::mod_mul(
-            &(BigInt::mod_pow(&witness, &e, n)), 
+            &(BigInt::mod_pow(&witness, &e, &n)), 
             &r, 
             &n
         );
@@ -53,7 +53,7 @@ impl QRProof {
             BigInt::from(1)
         } else {
             BigInt::from(0)
-        }; //e
+        };
 
         let lhs = BigInt::mod_pow(&z, &BigInt::from(2), &n); // z^2
         let rhs = BigInt::mod_mul( // h^e * a 
