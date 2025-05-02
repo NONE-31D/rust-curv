@@ -49,8 +49,11 @@ impl AffinePrimeProof {
         q: &BigInt,
         h: &BigInt,
         g: &BigInt,
-        // ca: &BigInt,
+        a: &BigInt,
+        alpha: &BigInt,
+        ca: &BigInt,
         cb: &BigInt,
+        c: &BigInt,
         pb_proof: &PBProof,
         qr_proof: &QRProof,
         qrdl_proof: &QRdlProof,
@@ -65,18 +68,18 @@ impl AffinePrimeProof {
         }
 
         let big_k = BigInt::from(2).pow(T+L+S) * q.pow(2);
-        let a = BigInt::sample_below(&q);
-        let alpha = BigInt::sample_below(&big_k);
-        let c = BigInt::mod_mul( // affine prime 을 위한 cb 를 이용한 c
-            &cb,
-            &(BigInt::one() + n.clone() * BigInt::from(2).pow(T+L) * q.clone()),
-            &nn
-        );
-        let ca = BigInt::mod_mul(
-            &(&BigInt::mod_pow(&c, &a, &nn)),
-            &(&BigInt::one() + n.clone() * alpha.clone()),
-            &nn
-        );
+        // let a = BigInt::sample_below(&q);
+        // let alpha = BigInt::sample_below(&big_k);
+        // let c = BigInt::mod_mul( // affine prime 을 위한 cb 를 이용한 c
+        //     &cb,
+        //     &(BigInt::one() + n.clone() * BigInt::from(2).pow(T+L) * q.clone()),
+        //     &nn
+        // );
+        // let ca = BigInt::mod_mul(
+        //     &(&BigInt::mod_pow(&c, &a, &nn)),
+        //     &(&BigInt::one() + n.clone() * alpha.clone()),
+        //     &nn
+        // );
 
         // prover's 1st message
         let b = BigInt::sample_below(&(BigInt::from(2).pow(T+L) * q));
@@ -134,7 +137,7 @@ impl AffinePrimeProof {
         let z4 = rho2.clone() + e.clone() * rho4.clone();
 
         Ok(AffinePrimeProof {
-            ca, 
+            ca: ca.clone(), 
             capital_a, 
             capital_b1, 
             capital_b2, 
@@ -642,9 +645,23 @@ static SMALL_PRIMES: [u32; 2048] = [
             &nn
         );
 
+        let big_k = BigInt::from(2).pow(T+L+S) * q.pow(2);
+        let a = BigInt::sample_below(&q);
+        let alpha = BigInt::sample_below(&big_k);
+        let c_prime = BigInt::mod_mul( // affine prime 을 위한 cb 를 이용한 c
+            &cb,
+            &(BigInt::one() + n.clone() * BigInt::from(2).pow(T+L) * q.clone()),
+            &nn
+        );
+        let ca = BigInt::mod_mul(
+            &(&BigInt::mod_pow(&c_prime, &a, &nn)),
+            &(&BigInt::one() + n.clone() * alpha.clone()),
+            &nn
+        );
+
         let (n0, h, g, pb_proof, qr_proof, qrdl_proof) = AffinePrimeProof::verifier_setup(&n0, &pb_proof);
 
-        match AffinePrimeProof::prove(&n, &n0, &nn, &q, &h, &g, &cb, &pb_proof, &qr_proof, &qrdl_proof) {
+        match AffinePrimeProof::prove(&n, &n0, &nn, &q, &h, &g, &a, &alpha, &ca, &cb, &c, &pb_proof, &qr_proof, &qrdl_proof) {
             Ok(affine_prime_proof) => {
                 match AffinePrimeProof::verify(&affine_prime_proof, &n, &n0, &nn, &q, &c) {
                     Ok(_) => println!("✅ Affine prime proof verification passed!"),
