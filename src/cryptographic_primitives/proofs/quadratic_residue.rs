@@ -9,17 +9,16 @@ use super::ProofError;
 pub struct QRProof {
     pub a: BigInt,
     pub z: BigInt,
-    pub h: BigInt,
 }
 
 impl QRProof {    
-    pub fn prove(n: &BigInt) -> QRProof {
-        // let n = pk;
-        let witness: BigInt = BigInt::sample_below(&n); // witness x
-        let h = BigInt::mod_pow(&witness, &BigInt::from(2), &n);
-        
-        let r: BigInt = BigInt::sample_below(&n);
-        let a: BigInt = BigInt::mod_pow(&r, &BigInt::from(2), &n);
+    pub fn prove(
+        n: &BigInt,
+        witness_for_h: &BigInt,
+        h: &BigInt,
+    ) -> QRProof {
+        let randomness: BigInt = BigInt::sample_below(&n);
+        let a: BigInt = BigInt::mod_pow(&randomness, &BigInt::from(2), &n);
         
         let mut hasher = Sha256::default();
         hasher.update(a.to_string().as_bytes());
@@ -33,16 +32,20 @@ impl QRProof {
         };
         
         let z = BigInt::mod_mul(
-            &(BigInt::mod_pow(&witness, &e, &n)), 
-            &r, 
+            &(BigInt::mod_pow(&witness_for_h, &e, &n)), 
+            &randomness, 
             &n
         );
 
-        QRProof {a, z, h}
+        QRProof {a, z}
     }
 
-    pub fn verify(qr_proof: &QRProof, n: &BigInt,) -> Result<(), ProofError> {
-        let &QRProof {ref a, ref z, ref h} = qr_proof;
+    pub fn verify(
+        n: &BigInt,
+        h: &BigInt,
+        qr_proof: &QRProof,
+    ) -> Result<(), ProofError> {
+        let &QRProof {ref a, ref z} = qr_proof;
 
         let mut hasher = Sha256::default();
         hasher.update(a.to_string().as_bytes());
@@ -74,14 +77,15 @@ impl QRProof {
 mod tests {
     use super::*;
 
-    // crate::test_for_all_curves_and_hashes!(test_qr_proof);
     #[test]
     pub fn test_qr_proof() {
-        let n = BigInt::sample(3072);
+        let n = BigInt::sample(3072); // pk
 
-        let qr_proof = QRProof::prove(&n);
+        let witness_for_h = BigInt::sample_below(&n); // witness x
+        let h = BigInt::mod_pow(&witness_for_h, &BigInt::from(2), &n);
+        let qr_proof = QRProof::prove(&n, &witness_for_h, &h);
 
-        match QRProof::verify(&qr_proof, &n) {
+        match QRProof::verify(&n, &h, &qr_proof) {
             Ok(res) => println!("Verification_qr result: {:?}", res),
             Err(error ) => panic!("Problem opening the file: {:?}", error.to_string()),
         }; 

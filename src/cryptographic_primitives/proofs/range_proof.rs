@@ -1,8 +1,12 @@
 use sha2::{Sha256, Digest};
-use crate::{arithmetic::traits::*, cryptographic_primitives::{hashing::merkle_tree::Proof, proofs::{paillier_blum_modulus::*, quadratic_residue::*, quadratic_residue_dlog::*}}};
+use crate::{arithmetic::traits::*, cryptographic_primitives::{commitments::pedersen_commitment, hashing::merkle_tree::Proof}, elliptic::curves::ECScalar};
+use crate::cryptographic_primitives::proofs::paillier_blum_modulus::*;
+use crate::cryptographic_primitives::proofs::quadratic_residue::*;
+use crate::cryptographic_primitives::proofs::quadratic_residue_dlog::*;
 use crate::BigInt;
 use serde::{Deserialize, Serialize};
 use super::ProofError;
+use super::super::super::elliptic::curves::secp256_k1::*;
 
 pub const T: u32 = 128;
 pub const L: u32 = 80;
@@ -16,22 +20,22 @@ pub struct RangeProof {
     z1: BigInt,
     z2: BigInt,
     z3: BigInt,
-    h: BigInt,
-    g: BigInt,
 }
 
 impl RangeProof {
-    pub fn verifier_setup(n0: &BigInt, pb_proof: &PBProof) -> (BigInt, BigInt, BigInt, PBProof, QRProof, QRdlProof) {
-        let x = BigInt::sample_below(&n0);
-        let h = BigInt::mod_pow(&x, &BigInt::from(2), &n0);
-        let alpha = BigInt::sample_below(&n0);
-        let g = BigInt::mod_pow(&h, &alpha, &n0);
+    pub fn verifier_setup(
+        n0: &BigInt,
+        witness_for_h: &BigInt,
+        h: &BigInt,
+        witness_for_g: &BigInt,
+        g: &BigInt,
+        pb_proof: &PBProof
+    ) -> (BigInt, BigInt, BigInt, PBProof, QRProof, QRdlProof) {
         // n0, h, g -> proof needed
-        // let pb_proof = pb_proof.clone(); // for n0
-        let qr_proof = QRProof::prove(&n0); // for h
-        let qrdl_proof = QRdlProof::prove(&n0); // for g
+        let qr_proof = QRProof::prove(&n0, &witness_for_h, &h);
+        let qrdl_proof = QRdlProof::prove(&n0, &h, &witness_for_g, &g);
 
-        (n0.clone(), h, g, pb_proof.clone(), qr_proof, qrdl_proof)
+        (n0.clone(), h.clone(), g.clone(), pb_proof.clone(), qr_proof, qrdl_proof)
     }
 
     pub fn prove(
@@ -49,9 +53,9 @@ impl RangeProof {
         r: &BigInt, 
     ) -> Result<RangeProof, ProofError> {
         // n0, h, g -> proof needed
-        let verif_pb = PBProof::verify(&pb_proof, &n0);
-        let verif_qr = QRProof::verify(&qr_proof, &n0);
-        let verif_qrdl = QRdlProof::verify(&qrdl_proof, &n0);
+        let verif_pb = PBProof::verify(&n0, &pb_proof);
+        let verif_qr = QRProof::verify(&n0, &h, &qr_proof);
+        let verif_qrdl = QRdlProof::verify(&n0, &h, &g, &qrdl_proof);
         // println!("verif_pb: {:?}\n verif_qr: {:?}\n verif-qrdl: {:?}", verif_pb, verif_qr, verif_qrdl);
         if verif_pb.is_err() || verif_qr.is_err() || verif_qrdl.is_err() {
             return Err(ProofError)
@@ -111,8 +115,6 @@ impl RangeProof {
             z1, 
             z2, 
             z3, 
-            h: h.clone(), 
-            g: g.clone()
         })
     }
 
@@ -123,8 +125,10 @@ impl RangeProof {
         nn: &BigInt, 
         q: &BigInt, 
         c: &BigInt, 
+        h: &BigInt,
+        g: &BigInt,
     ) -> Result<(), ProofError> {
-        let &RangeProof { ref capital_c, ref d, ref capital_d, ref z1, ref z2, ref z3, ref h, ref g } = range_proof;
+        let &RangeProof { ref capital_c, ref d, ref capital_d, ref z1, ref z2, ref z3 } = range_proof;
 
         // generating hash e as non-interactive
         let mut hasher = Sha256::new();
@@ -176,27 +180,11 @@ impl RangeProof {
 mod tests {
     use super::*;
 
-    pub struct Keypair {
-        // #[serde(with = "crate::serialize::bigint")]
-        pub p: BigInt, // TODO[Morten] okay to make non-public?
-    
-        // #[serde(with = "crate::serialize::bigint")]
-        pub q: BigInt, // TODO[Morten] okay to make non-public?
-    }
-
-    impl Keypair {
-        /// Generate default encryption and decryption keys.
-        pub fn keys(&self) -> (EncryptionKey, DecryptionKey) {
-            let p = self.p.clone();
-            let q = self.q.clone();
-            (EncryptionKey{n: p.clone()*q.clone()}, DecryptionKey{p, q})
-        }
-    }
-
     /// Public encryption key.
     #[derive(Clone, Debug, PartialEq)]
     pub struct EncryptionKey {
         pub n: BigInt,  // the modulus
+        pub nn: BigInt, // the modulus squared
     }
 
     /// Private decryption key.
@@ -206,33 +194,47 @@ mod tests {
         pub q: BigInt, // second prime
     }
     
-    
-    fn keypair_blum_with_modulus_size(bit_length: usize) -> Keypair {
-        let mut p = BigInt::new();
-        let mut q = BigInt::new();
-        loop {
-            p = BigInt::sample_prime(bit_length / 2);
-            if &p % 4 != BigInt::from(3) {
-                continue;
-            }
+    pub struct PaillierBlumKeypair {
+        pub ek: EncryptionKey,
+        dk: DecryptionKey,
+    }
 
-            q = BigInt::sample_prime(bit_length / 2);
-            if &q % 4 != BigInt::from(3) {
-                continue;
-            }
-            if BigInt::gcd(&p, &q) != BigInt::one() {
-                continue;
-            } // check that p and q are coprime (ensures q^-1 mod p exists)
+    impl PaillierBlumKeypair {
+        pub fn generate_paillier_blum_keypair(bit_len: usize) -> PaillierBlumKeypair {
+            let dc_keypair = loop {
+                let p = BigInt::sample_prime(bit_len / 2);
+                if &p % 4 != BigInt::from(3) {
+                    continue;
+                }
+                let q = BigInt::sample_prime(bit_len / 2);
+                if &q % 4 != BigInt::from(3) {
+                    continue;
+                }
+                if BigInt::gcd(&p, &q) != BigInt::one() {
+                    continue;
+                }
 
-            let n = &p * &q;
-            let phi_n = (&p - BigInt::one()) * (&q - BigInt::one());
-            if BigInt::gcd(&n, &phi_n) != BigInt::one() {
-                continue; // N과 φ(N)이 서로소가 아니라면 다시 샘플링
-            }
+                let n = &p * &q;
+                let phi_n = (&p - BigInt::one()) * (&q - BigInt::one());
+                if BigInt::gcd(&n, &phi_n) != BigInt::one() {
+                    continue;
+                }
+                let nn = n.clone() * n.clone();
 
-            break;
-        } // mod 4에서 3이되는 prime(p, q) 선정 -> n = pq
-        Keypair { p, q }
+                let ek = EncryptionKey {
+                    n: n.clone(),
+                    nn: nn.clone(),
+                };
+
+                let dk = DecryptionKey {
+                    p: p.clone(),
+                    q: q.clone(),
+                };
+
+                break PaillierBlumKeypair {ek, dk}
+            };
+            dc_keypair
+        }
     }
 
     pub trait PrimeSampable {
@@ -549,21 +551,26 @@ static SMALL_PRIMES: [u32; 2048] = [
     
     #[test]
     pub fn test_range_proof() {
-        let (_, pb_keypair) = PBProof::prove(3072); // prover
-        let n = pb_keypair.n.clone();
-        let nn = n.clone() * n.clone();
-        let q = pb_keypair.get_q().clone();
-        let (pb_proof, pb_keypair0) = PBProof::prove(3072); // verifier
-        let n0 = pb_keypair0.n.clone();
-        // let pb_proof = pb_proof.clone();
+        let prover_keypair = PaillierBlumKeypair::generate_paillier_blum_keypair(3072); // prover keypair
+        let n = prover_keypair.ek.n.clone();
+        let nn = prover_keypair.ek.nn.clone();
+
+        let verifier_keypair = PaillierBlumKeypair::generate_paillier_blum_keypair(3072); // verifier keypair
+        let n0 = verifier_keypair.ek.n.clone();
+        let p = &verifier_keypair.dk.p.clone();
+        let q = &verifier_keypair.dk.q.clone();
+        let pb_proof = PBProof::prove(&n, p, q);
+
+        let witness_for_h = BigInt::sample_below(&n0); // witness x
+        let h = BigInt::mod_pow(&witness_for_h, &BigInt::from(2), &n0); // n0
+
+        let witness_for_g = BigInt::sample_below(&n0); // witness alpha
+        let g = BigInt::mod_pow(&h, &witness_for_g, &n0);
+
+        let q = Secp256k1Scalar::group_order(); // ecdsa qrder q 
 
         let x = BigInt::sample_below(&q); // secret witness / like message a, b
         let r = BigInt::sample_below(&n); // secret witness / randomness
-        // let c = BigInt::mod_mul( // paillier c as 3072-bit enc of x with r
-        //     &BigInt::mod_pow(&r, &n, &nn),
-        //     &BigInt::mod_pow(&(BigInt::from(1) + n.clone()), &x, &nn),
-        //     &nn
-        // );
         let c = BigInt::mod_mul( // temporary c as 3072-bit enc of x with r
             &BigInt::mod_pow(&r, &n, &nn),
             &(BigInt::one() + n.clone() * x.clone()),
@@ -571,12 +578,11 @@ static SMALL_PRIMES: [u32; 2048] = [
         );
 
         // 여기 ek위치에 capital C 넣어야하는거 아니에여?? 
-        let (n0, h, g, pb_proof, qr_proof, qrdl_proof) = RangeProof::verifier_setup(&n0, &pb_proof);
-        // let range_proof: Result<RangeProof, ProofError> = RangeProof::prove(&n, &n0, &nn, &q, &h, &g, &c, &pb_proof, &qr_proof, &qrdl_proof, &x, &r);
+        let (n0, h, g, pb_proof, qr_proof, qrdl_proof) = RangeProof::verifier_setup(&n0, &witness_for_h, &h, &witness_for_g, &g, &pb_proof);
 
         match RangeProof::prove(&n, &n0, &nn, &q, &h, &g, &c, &pb_proof, &qr_proof, &qrdl_proof, &x, &r) {
             Ok(range_proof) => {
-                match RangeProof::verify(&range_proof, &n, &n0, &nn, &q, &c) {
+                match RangeProof::verify(&range_proof, &n, &n0, &nn, &q, &c, &h, &g) {
                     Ok(_) => println!("✅ Range proof verification passed!"),
                     Err(e) => eprintln!("❌ Verification failed: {:?}", e),
                 }
@@ -585,11 +591,5 @@ static SMALL_PRIMES: [u32; 2048] = [
                 eprintln!("❌ Proof generation failed: {:?}", e);
             }
         }
-        
-        // println!("verif_pb: {:?}\n verif_qr: {:?}\n verif-qrdl: {:?}", verif_pb, verif_qr, verif_qrdl);
-        // match RangeProof::verify(&range_proof, &n, &n0, &nn, &q, &c) {
-        //     Ok(res) => println!("Verification_range_proof result: {:?}", res),
-        //     Err(error ) => panic!("Problem opening the file: {:?}", error.to_string()),
-        // }; 
     }
 }

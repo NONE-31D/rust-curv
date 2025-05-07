@@ -11,19 +11,15 @@ pub const S: u32 = 128;
 pub struct QRdlProof {
     pub a: BigInt,
     pub z: BigInt,
-    pub h: BigInt,
-    pub g: BigInt,
 }
 
 impl QRdlProof {    
-    pub fn prove(n: &BigInt) -> QRdlProof {
-        // let n = pk;
-
-        let witness: BigInt = BigInt::sample_below(&n);
-        let h = BigInt::mod_pow(&witness, &BigInt::from(2), &n);
-        let alpha = BigInt::sample_below(&n);
-        let g = BigInt::mod_pow(&h, &alpha, &n);
-    
+    pub fn prove(
+        n: &BigInt,
+        h: &BigInt,
+        witness_for_g: &BigInt,
+        g: &BigInt,
+    ) -> QRdlProof {
         let beta = BigInt::sample_range(&BigInt::from(1), &(BigInt::from(2).pow(S-1) * n)) * 2;
         let a = BigInt::mod_pow(&h, &beta, &n); // h^beta
 
@@ -38,13 +34,18 @@ impl QRdlProof {
             BigInt::from(0)
         };
 
-        let z = e.clone() * alpha + beta; // e * alpha + beta (integer)
+        let z = e.clone() * witness_for_g + beta; // e * alpha + beta (integer)
 
-        QRdlProof {a, z, h, g}
+        QRdlProof {a, z}
     }
 
-    pub fn verify(qrdl_proof: &QRdlProof, n: &BigInt,) -> Result<(), ProofError> {
-        let &QRdlProof {ref a, ref z, ref h, ref g} = qrdl_proof;
+    pub fn verify(
+        n: &BigInt,
+        h: &BigInt,
+        g: &BigInt,
+        qrdl_proof: &QRdlProof, 
+    ) -> Result<(), ProofError> {
+        let &QRdlProof {ref a, ref z} = qrdl_proof;
 
         let mut hasher = Sha256::default();
         hasher.update(a.to_string().as_bytes());
@@ -61,7 +62,7 @@ impl QRdlProof {
         let rhs = BigInt::mod_mul(
             &(BigInt::mod_pow(&g, &e, &n)),
             &a,
-            &n,
+            n,
         );
 
         if lhs == rhs {
@@ -74,15 +75,22 @@ impl QRdlProof {
 
 #[cfg(test)]
 mod tests {
+    // use crate::cryptographic_primitives::proofs::quadratic_residue::QRProof;
+
     use super::*;
 
     #[test]
     pub fn test_qrdl_proof() {
-        let n = BigInt::sample(3072);
+        let n = BigInt::sample(3072); // pk
 
-        let qrdl_proof = QRdlProof::prove(&n);
+        let witness_for_h = BigInt::sample_below(&n); // witness x
+        let h = BigInt::mod_pow(&witness_for_h, &BigInt::from(2), &n);
 
-        match QRdlProof::verify(&qrdl_proof, &n) {
+        let witness_for_g = BigInt::sample_below(&n); // witness alpha
+        let g = BigInt::mod_pow(&h, &witness_for_g, &n);
+        let qrdl_proof = QRdlProof::prove(&n, &h, &witness_for_g, &g);
+
+        match QRdlProof::verify(&n, &h, &g, &qrdl_proof) {
             Ok(res) => println!("Verification_qrdl result: {:?}", res),
             Err(error ) => panic!("Problem opening the file: {:?}", error.to_string()),
         }; 

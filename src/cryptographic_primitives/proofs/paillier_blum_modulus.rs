@@ -8,33 +8,6 @@ pub const L: usize = 5;
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(bound = "")]
-
-pub struct PaillierBlum {
-    pub n: BigInt,
-    p: BigInt,
-    q: BigInt,
-}
-
-pub struct PaullierBlumEncryptionKey {
-    pub n: BigInt,
-    pub nn: BigInt,
-}
-pub struct PaullierBlumDecryptionKey {
-    pub p: BigInt,
-    pub q: BigInt,
-}
-
-
-impl PaillierBlum {
-    pub fn get_p(&self) -> &BigInt {
-        &self.p
-    }
-
-    pub fn get_q(&self) -> &BigInt {
-        &self.q
-    }
-}
-#[derive(Clone)]
 pub struct PBProof { // paillier-blum-proof
     pub w: BigInt,
     pub x_vec: Vec<BigInt>,
@@ -44,38 +17,7 @@ pub struct PBProof { // paillier-blum-proof
 }
 
 impl PBProof {    
-    pub fn prove(bit_len: usize) -> (PBProof, PaillierBlum) {
-        // n, p, q
-        let pb = loop {
-            let p = BigInt::sample_prime(bit_len / 2);
-            if &p % 4 != BigInt::from(3) {
-                continue;
-            }
-
-            let q = BigInt::sample_prime(bit_len / 2);
-            if &q % 4 != BigInt::from(3) {
-                continue;
-            }
-
-            if BigInt::gcd(&p, &q) != BigInt::one() {
-                continue;
-            }
-
-            let n = &p * &q;
-            let phi_n = (&p - BigInt::one()) * (&q - BigInt::one());
-            if BigInt::gcd(&n, &phi_n) != BigInt::one() {
-                continue;
-            }
-            break PaillierBlum { n, p, q };
-            // TODO: PB Ek , Dk 분리해서 저장
-            // p, q 생성
-            // ek, dk 분리 저장.
-        };
-    
-        let n = pb.n.clone();
-        let p = pb.p.clone();
-        let q = pb.q.clone();
-
+    pub fn prove(n: &BigInt, p: &BigInt, q: &BigInt) -> PBProof {
          // w
          let w = loop {
             let w = BigInt::sample_below(&n);
@@ -135,12 +77,12 @@ impl PBProof {
                 yi_prime = BigInt::mod_mul(&yi_prime, &w, &n);
             }
             if a == 1 {
-                yi_prime = &n - (&yi_prime % &n);
+                yi_prime = n.clone() - (&yi_prime % n.clone());
             }
             
             // x
-            let exp_p = (&p + BigInt::one()) >> 2; // p + 1 / 4 quotient
-            let exp_q = (&q + BigInt::one()) >> 2; // q + 1 / 4 quotient
+            let exp_p = (p.clone() + BigInt::one()) >> 2; // p + 1 / 4 quotient
+            let exp_q = (q.clone() + BigInt::one()) >> 2; // q + 1 / 4 quotient
 
             let yiprime_p = BigInt::mod_pow(&yi_prime, &exp_p, &p);
             let yiprime_q = BigInt::mod_pow(&yi_prime, &exp_q, &q);
@@ -175,10 +117,10 @@ impl PBProof {
             z_vec.push(z);
         }
 
-        (PBProof {w, x_vec, a_vec, b_vec, z_vec}, PaillierBlum {n, p, q})
+        PBProof {w, x_vec, a_vec, b_vec, z_vec}
     }
 
-    pub fn verify(pb_proof: &PBProof, n: &BigInt,) -> Result<(), ProofError> {
+    pub fn verify(n: &BigInt, pb_proof: &PBProof) -> Result<(), ProofError> {
         let &PBProof {ref w, ref x_vec, ref a_vec, ref b_vec, ref z_vec} = pb_proof;
         // n이 짝수이거나, 소수일 가능성이 있으면 return Err
         if n.is_even() || n.is_probable_prime(10) {
@@ -545,11 +487,74 @@ static SMALL_PRIMES: [u32; 2048] = [
 mod tests {
     use super::*;
 
+    /// Public encryption key.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct EncryptionKey {
+        pub n: BigInt,  // the modulus
+        pub nn: BigInt, // the modulus squared
+    }
+
+    /// Private decryption key.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct DecryptionKey {
+        pub p: BigInt, // first prime
+        pub q: BigInt, // second prime
+    }
+
+    pub struct PaillierBlumKeypair {
+        pub ek: EncryptionKey,
+        dk: DecryptionKey,
+    }
+
+
+    impl PaillierBlumKeypair {
+        pub fn generate_paillier_blum_keypair(bit_len: usize) -> PaillierBlumKeypair {
+            let dc_keypair = loop {
+                let p = BigInt::sample_prime(bit_len / 2);
+                if &p % 4 != BigInt::from(3) {
+                    continue;
+                }
+                let q = BigInt::sample_prime(bit_len / 2);
+                if &q % 4 != BigInt::from(3) {
+                    continue;
+                }
+                if BigInt::gcd(&p, &q) != BigInt::one() {
+                    continue;
+                }
+
+                let n = &p * &q;
+                let phi_n = (&p - BigInt::one()) * (&q - BigInt::one());
+                if BigInt::gcd(&n, &phi_n) != BigInt::one() {
+                    continue;
+                }
+                let nn = n.clone() * n.clone();
+
+                let ek = EncryptionKey {
+                    n: n.clone(),
+                    nn: nn.clone(),
+                };
+
+                let dk = DecryptionKey {
+                    p: p.clone(),
+                    q: q.clone(),
+                };
+
+                break PaillierBlumKeypair {ek, dk}
+            };
+            dc_keypair
+        }
+    }
+
     #[test]
     pub fn test_pb_proof() {
-        let pb_proof = PBProof::prove(3072); // n 생성해서 각종함수에 넘겨줌.
+        
+        let keypair = PaillierBlumKeypair::generate_paillier_blum_keypair(3072);
+        let n = keypair.ek.n.clone();
+        let p = keypair.dk.p.clone();
+        let q = keypair.dk.q.clone();
+        let pb_proof = PBProof::prove(&n, &p, &q);
 
-        match PBProof::verify(&pb_proof.0, &pb_proof.1.n) {
+        match PBProof::verify(&n, &pb_proof) {
             Ok(res) => println!("Verification_pb result: {:?}", res),
             Err(error ) => panic!("Problem opening the file: {:?}", error.to_string()),
         }; 

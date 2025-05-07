@@ -25,21 +25,22 @@ pub struct AffinePrimeProof {
     z2: BigInt,
     z3: BigInt,
     z4: BigInt,
-    h: BigInt,
-    g: BigInt,
 }
 
 impl AffinePrimeProof {    
-    pub fn verifier_setup(n0: &BigInt, pb_proof: &PBProof) -> (BigInt, BigInt, BigInt, PBProof, QRProof, QRdlProof) {
-        let x = BigInt::sample_below(&n0);
-        let h = BigInt::mod_pow(&x, &BigInt::from(2), &n0);
-        let alpha = BigInt::sample_below(&n0);
-        let g = BigInt::mod_pow(&h, &alpha, &n0);
+    pub fn verifier_setup(
+        n0: &BigInt, 
+        witness_for_h: &BigInt,
+        h: &BigInt,
+        witness_for_g: &BigInt,
+        g: &BigInt,
+        pb_proof: &PBProof
+    ) -> (BigInt, BigInt, BigInt, PBProof, QRProof, QRdlProof) {
         // n0, h, g -> proof needed
-        let qr_proof = QRProof::prove(&n0); // for h
-        let qrdl_proof = QRdlProof::prove(&n0); // for g
+        let qr_proof = QRProof::prove(&n0, &witness_for_h, &h); // for h
+        let qrdl_proof = QRdlProof::prove(&n0, &h, &witness_for_g, &g); // for g
 
-        (n0.clone(), h, g, pb_proof.clone(), qr_proof, qrdl_proof)
+        (n0.clone(), h.clone(), g.clone(), pb_proof.clone(), qr_proof, qrdl_proof)
     }
     pub fn prove(
         // n, q, ca, cb; a, alpha <- relation
@@ -59,9 +60,9 @@ impl AffinePrimeProof {
         qrdl_proof: &QRdlProof,
     ) -> Result<AffinePrimeProof, ProofError> {
         // n0, h, g -> proof needed
-        let verif_pb = PBProof::verify(&pb_proof, &n0);
-        let verif_qr = QRProof::verify(&qr_proof, &n0);
-        let verif_qrdl = QRdlProof::verify(&qrdl_proof, &n0);
+        let verif_pb = PBProof::verify(&n0, &pb_proof);
+        let verif_qr = QRProof::verify(&n0, &h, &qr_proof);
+        let verif_qrdl = QRdlProof::verify(&n0, &h, &g, &qrdl_proof);
         // println!("verif_pb: {:?}\n verif_qr: {:?}\n verif-qrdl: {:?}", verif_pb, verif_qr, verif_qrdl);
         if verif_pb.is_err() || verif_qr.is_err() || verif_qrdl.is_err() {
             return Err(ProofError)
@@ -147,8 +148,6 @@ impl AffinePrimeProof {
             z2, 
             z3, 
             z4, 
-            h: h.clone(), 
-            g: g.clone()
         })
     }
 
@@ -159,11 +158,12 @@ impl AffinePrimeProof {
         nn: &BigInt,
         q: &BigInt,
         c: &BigInt,
-
+        h: &BigInt,
+        g: &BigInt,
     ) -> Result<(), ProofError> {
         // getting proof for affran from prover
         let big_k: BigInt = BigInt::from(2).pow(T+L+S) * q.pow(2);
-        let &AffinePrimeProof {ref ca, ref capital_a, ref capital_b1, ref capital_b2, ref capital_b3, ref capital_b4, ref z1, ref z2, ref z3, ref z4, ref h, ref g } = affine_prime_proof;
+        let &AffinePrimeProof {ref ca, ref capital_a, ref capital_b1, ref capital_b2, ref capital_b3, ref capital_b4, ref z1, ref z2, ref z3, ref z4 } = affine_prime_proof;
         
         // hashing e as non-interactive    
         let mut hasher = Sha256::new();
@@ -245,66 +245,63 @@ impl AffinePrimeProof {
 mod tests {
     use super::*;
 
-    
-    pub struct Keypair {
-        // #[serde(with = "crate::serialize::bigint")]
-        pub p: BigInt, // TODO[Morten] okay to make non-public?
-    
-        // #[serde(with = "crate::serialize::bigint")]
-        pub q: BigInt, // TODO[Morten] okay to make non-public?
-    }
-    
-    impl Keypair {
-        /// Generate default encryption and decryption keys.
-        pub fn keys(&self) -> (EncryptionKey, DecryptionKey) {
-            let p = self.p.clone();
-            let q = self.q.clone();
-            (EncryptionKey{n: p.clone()*q.clone()}, DecryptionKey{p, q})
+        /// Public encryption key.
+        #[derive(Clone, Debug, PartialEq)]
+        pub struct EncryptionKey {
+            pub n: BigInt,  // the modulus
+            pub nn: BigInt, // the modulus squared
         }
-    }
-    
-    /// Public encryption key.
-    #[derive(Clone, Debug, PartialEq)]
-    pub struct EncryptionKey {
-        pub n: BigInt,  // the modulus
-    }
-    
-    /// Private decryption key.
-    #[derive(Clone, Debug, PartialEq)]
-    pub struct DecryptionKey {
-        pub p: BigInt, // first prime
-        pub q: BigInt, // second prime
-    }
         
-        
-    fn keypair_blum_with_modulus_size(bit_length: usize) -> Keypair {
-        let mut p = BigInt::new();
-        let mut q = BigInt::new();
-        loop {
-            p = BigInt::sample_prime(bit_length / 2);
-            if &p % 4 != BigInt::from(3) {
-                continue;
-            }
-
-            q = BigInt::sample_prime(bit_length / 2);
-            if &q % 4 != BigInt::from(3) {
-                continue;
-            }
-            if BigInt::gcd(&p, &q) != BigInt::one() {
-                continue;
-            } // check that p and q are coprime (ensures q^-1 mod p exists)
-
-            let n = &p * &q;
-            let phi_n = (&p - BigInt::one()) * (&q - BigInt::one());
-            if BigInt::gcd(&n, &phi_n) != BigInt::one() {
-                continue; // N과 φ(N)이 서로소가 아니라면 다시 샘플링
-            }
-
-            break;
-        } // mod 4에서 3이되는 prime(p, q) 선정 -> n = pq
-        Keypair { p, q }
-    }
+        /// Private decryption key.
+        #[derive(Clone, Debug, PartialEq)]
+        pub struct DecryptionKey {
+            pub p: BigInt, // first prime
+            pub q: BigInt, // second prime
+        }
     
+        pub struct PaillierBlumKeypair {
+            pub ek: EncryptionKey,
+            dk: DecryptionKey,
+        }
+    
+        impl PaillierBlumKeypair {
+            pub fn generate_paillier_blum_keypair(bit_len: usize) -> PaillierBlumKeypair {
+                let dc_keypair = loop {
+                    let p = BigInt::sample_prime(bit_len / 2);
+                    if &p % 4 != BigInt::from(3) {
+                        continue;
+                    }
+                    let q = BigInt::sample_prime(bit_len / 2);
+                    if &q % 4 != BigInt::from(3) {
+                        continue;
+                    }
+                    if BigInt::gcd(&p, &q) != BigInt::one() {
+                        continue;
+                    }
+    
+                    let n = &p * &q;
+                    let phi_n = (&p - BigInt::one()) * (&q - BigInt::one());
+                    if BigInt::gcd(&n, &phi_n) != BigInt::one() {
+                        continue;
+                    }
+                    let nn = n.clone() * n.clone();
+    
+                    let ek = EncryptionKey {
+                        n: n.clone(),
+                        nn: nn.clone(),
+                    };
+    
+                    let dk = DecryptionKey {
+                        p: p.clone(),
+                        q: q.clone(),
+                    };
+    
+                    break PaillierBlumKeypair {ek, dk}
+                };
+                dc_keypair
+            }
+        }
+        
     pub trait PrimeSampable {
         fn sample_prime(bitsize: usize) -> Self;
     }
@@ -619,15 +616,22 @@ static SMALL_PRIMES: [u32; 2048] = [
 
     #[test]
     pub fn test_affine_prime_proof() {
-        let (_, pb_keypair) = PBProof::prove(3072); // prover
-        let n = pb_keypair.n.clone();
-        let nn = n.clone() * n.clone();
-        // let q = pb_keypair.get_q().clone();
+        let prover_peypair = PaillierBlumKeypair::generate_paillier_blum_keypair(3072); // prover keypair
+        let n = prover_peypair.ek.n.clone();
+        let nn = prover_peypair.ek.nn.clone();
+
         let q = Secp256k1Scalar::group_order().clone(); // ecdsa q 
 
-        let (pb_proof, pb_keypair0) = PBProof::prove(3072); // verifier
-        let n0 = pb_keypair0.n.clone();
-        let nn0 = n0.clone() * n0.clone();
+        let verifier_keypair = PaillierBlumKeypair::generate_paillier_blum_keypair(3072); // verifier keypair
+        let n0 = verifier_keypair.ek.n.clone();
+        let p0 = &verifier_keypair.dk.p.clone();
+        let q0 = &verifier_keypair.dk.q.clone();
+        let pb_proof = PBProof::prove(&n0, &p0, &q0);
+
+        let witness_for_h = BigInt::sample_below(&n0); // witness x
+        let h = BigInt::mod_pow(&witness_for_h, &BigInt::from(2), &n0); // n0
+        let witness_for_g = BigInt::sample_below(&n0); // witness alpha
+        let g = BigInt::mod_pow(&h, &witness_for_g, &n0);
 
         let x = BigInt::sample_below(&q); // secret witness / like message a, b
         let r = BigInt::sample_below(&n); // secret witness / randomness
@@ -659,11 +663,11 @@ static SMALL_PRIMES: [u32; 2048] = [
             &nn
         );
 
-        let (n0, h, g, pb_proof, qr_proof, qrdl_proof) = AffinePrimeProof::verifier_setup(&n0, &pb_proof);
+        let (n0, h, g, pb_proof, qr_proof, qrdl_proof) = AffinePrimeProof::verifier_setup(&n0, &witness_for_h, &h, &witness_for_g, &g, &pb_proof);
 
         match AffinePrimeProof::prove(&n, &n0, &nn, &q, &h, &g, &a, &alpha, &ca, &cb, &c, &pb_proof, &qr_proof, &qrdl_proof) {
             Ok(affine_prime_proof) => {
-                match AffinePrimeProof::verify(&affine_prime_proof, &n, &n0, &nn, &q, &c) {
+                match AffinePrimeProof::verify(&affine_prime_proof, &n, &n0, &nn, &q, &c, &h, &g) {
                     Ok(_) => println!("✅ Affine prime proof verification passed!"),
                     Err(e) => eprintln!("❌ Verification failed: {:?}", e),
                 }
