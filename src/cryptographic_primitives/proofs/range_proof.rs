@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use super::ProofError;
 use super::super::super::elliptic::curves::secp256_k1::*;
 
+use crate::cryptographic_primitives::proofs::raw_ciphertext::RawCiphertext;
+
 pub const T: u32 = 128;
 pub const L: u32 = 80;
 
@@ -45,7 +47,8 @@ impl RangeProof {
         q: &BigInt, 
         h: &BigInt,
         g: &BigInt,
-        c: &BigInt,
+        // c: &BigInt,
+        ciphertext: RawCiphertext,
         pb_proof: &PBProof,
         qr_proof: &QRProof,
         qrdl_proof: &QRdlProof,
@@ -91,7 +94,7 @@ impl RangeProof {
         let mut hasher = Sha256::new();
         hasher.update(n.to_string().as_bytes());
         hasher.update(q.to_string().as_bytes());
-        hasher.update(c.to_string().as_bytes());
+        hasher.update(ciphertext.c.to_string().as_bytes());
         hasher.update(capital_c.to_string().as_bytes());
         hasher.update(d.to_string().as_bytes());
         hasher.update(capital_d.to_string().as_bytes());
@@ -167,6 +170,16 @@ impl RangeProof {
         let verif3 = // range cheek for z1
         z1 >= &(BigInt::from(2).pow(T) * q) && 
         z1 < &{BigInt::from(2).pow(T + L) * q};
+
+        // if lhs1 != rhs1 {
+        //     eprintln!("❌ lhs1 != rhs1\nlhs1: {}\nrhs1: {}", lhs1, rhs1);
+        // }
+        // if lhs2 != rhs2 {
+        //     eprintln!("❌ lhs2 != rhs2\nlhs2: {}\nrhs2: {}", lhs2, rhs2);
+        // }
+        // if !verif3 {
+        //     eprintln!("❌ z1 not in valid range:\nz1: {}", z1);
+        // }
 
         if lhs1 == rhs1 && lhs2 == rhs2 && verif3 == true {
             Ok(())
@@ -557,9 +570,9 @@ static SMALL_PRIMES: [u32; 2048] = [
 
         let verifier_keypair = PaillierBlumKeypair::generate_paillier_blum_keypair(3072); // verifier keypair
         let n0 = verifier_keypair.ek.n.clone();
-        let p = &verifier_keypair.dk.p.clone();
-        let q = &verifier_keypair.dk.q.clone();
-        let pb_proof = PBProof::prove(&n, p, q);
+        let p0 = &verifier_keypair.dk.p.clone();
+        let q0 = &verifier_keypair.dk.q.clone();
+        let pb_proof = PBProof::prove(&n0, &p0, &q0);
 
         let witness_for_h = BigInt::sample_below(&n0); // witness x
         let h = BigInt::mod_pow(&witness_for_h, &BigInt::from(2), &n0); // n0
@@ -576,11 +589,13 @@ static SMALL_PRIMES: [u32; 2048] = [
             &(BigInt::one() + n.clone() * x.clone()),
             &nn
         );
+        let ciphertext = RawCiphertext::new(c.clone());
+
 
         // 여기 ek위치에 capital C 넣어야하는거 아니에여?? 
         let (n0, h, g, pb_proof, qr_proof, qrdl_proof) = RangeProof::verifier_setup(&n0, &witness_for_h, &h, &witness_for_g, &g, &pb_proof);
 
-        match RangeProof::prove(&n, &n0, &nn, &q, &h, &g, &c, &pb_proof, &qr_proof, &qrdl_proof, &x, &r) {
+        match RangeProof::prove(&n, &n0, &nn, &q, &h, &g, ciphertext, &pb_proof, &qr_proof, &qrdl_proof, &x, &r) {
             Ok(range_proof) => {
                 match RangeProof::verify(&range_proof, &n, &n0, &nn, &q, &c, &h, &g) {
                     Ok(_) => println!("✅ Range proof verification passed!"),
